@@ -7,13 +7,6 @@ app.use(express.text());
 const port: number = parseInt(process.env.PORT || "3000", 10);
 const apiKey: string | undefined = process.env.OPENAI_API_KEY;
 
-// Configure Vite middleware for React client (SPA mode)
-const vite = await createViteServer({
-  server: { middlewareMode: true },
-  appType: "spa",
-});
-app.use(vite.middlewares);
-
 const sessionConfig = JSON.stringify({
   session: {
     type: "realtime",
@@ -73,6 +66,13 @@ app.get("/token", async (_: Request, res: Response) => {
     res.status(500).json({ error: "Failed to generate token" });
   }
 });
+
+// Configure Vite middleware for React client (SPA mode)
+const vite = await createViteServer({
+  server: { middlewareMode: true },
+  appType: "spa",
+});
+app.use(vite.middlewares);
 
 app.listen(port, () => {
   console.log(`Express server running on *:${port}`);
