@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import logo from "/assets/openai-logomark.svg";
 import EventLog from "./EventLog";
 import SessionControls from "./SessionControls";
-import ToolPanel from "./ToolPanel";
+import alleluja from "./alleluia.png";
+import { MarkerArea } from "@markerjs/markerjs3";
 
 export default function App() {
   const [isSessionActive, setIsSessionActive] = useState(false);
@@ -10,6 +10,16 @@ export default function App() {
   const [dataChannel, setDataChannel] = useState(null);
   const peerConnection = useRef(null);
   const audioElement = useRef(null);
+  const imgElement = useRef(null);
+  const containerElement = useRef(null);
+
+  useEffect(() => {
+    if (!imgElement.current || !containerElement.current) return;
+
+    const markerArea = new MarkerArea();
+    markerArea.targetImage = imgElement.current;
+    containerElement.current.appendChild(markerArea);
+  });
 
   async function startSession() {
     // Get a session token for OpenAI Realtime API
@@ -91,7 +101,7 @@ export default function App() {
       if (!message.timestamp) {
         message.timestamp = timestamp;
       }
-      setEvents((prev) => [message, ...prev]);
+      // setEvents((prev) => [message, ...prev]);
     } else {
       console.error(
         "Failed to send message - no data channel available",
@@ -120,6 +130,7 @@ export default function App() {
     sendClientEvent({ type: "response.create" });
   }
 
+
   // Attach event listeners to the data channel when a new one is created
   useEffect(() => {
     if (dataChannel) {
@@ -130,7 +141,33 @@ export default function App() {
           event.timestamp = new Date().toLocaleTimeString();
         }
 
-        setEvents((prev) => [event, ...prev]);
+        if (event.type.endsWith("delta")) {
+          // ignore
+        }
+
+        if (event.type === 'response.done') {
+          console.log('Response done event:', event);
+          if (Array.isArray(event.response?.output)) {
+            // console.log('Response output array:', event.response.output.map(o => o.type));
+            event.response.output.forEach((output, index) => {
+              if (output.type === 'function_call') {
+                const callId = output.call_id;
+                setEvents(
+                  prev => [...prev, JSON.parse(output.arguments)]
+                )
+
+                sendClientEvent({
+                  "type": "conversation.item.create",
+                  "item": {
+                    "type": "function_call_output",
+                    "call_id": callId,
+                    "output": "received"
+                  }
+                })
+              }
+            });
+          }
+        }
       });
 
       // Set session active when the data channel is opened
@@ -143,15 +180,18 @@ export default function App() {
 
   return (
     <>
-      <nav className="absolute top-0 left-0 right-0 h-16 flex items-center">
-        <div className="flex items-center gap-4 w-full m-4 pb-2 border-0 border-b border-solid border-gray-200">
-          <img style={{ width: "24px" }} src={logo} />
-          <h1>realtime console</h1>
-        </div>
-      </nav>
       <main className="absolute top-16 left-0 right-0 bottom-0">
         <section className="absolute top-0 left-0 right-[380px] bottom-0 flex">
-          <section className="absolute top-0 left-0 right-0 bottom-32 px-4 overflow-y-auto">
+          <div ref={containerElement}>
+            <img
+              src={alleluja}
+              alt="Alleluja"
+              className="w-full object-contain"
+              ref={imgElement}
+            />
+          </div>
+
+          <section className="absolute top-0 left-46 right-0 bottom-32 px-4 overflow-y-auto">
             <EventLog events={events} />
           </section>
           <section className="absolute h-32 left-0 right-0 bottom-0 p-4">
@@ -164,14 +204,6 @@ export default function App() {
               isSessionActive={isSessionActive}
             />
           </section>
-        </section>
-        <section className="absolute top-0 w-[380px] right-0 bottom-0 p-4 pt-0 overflow-y-auto">
-          <ToolPanel
-            sendClientEvent={sendClientEvent}
-            sendTextMessage={sendTextMessage}
-            events={events}
-            isSessionActive={isSessionActive}
-          />
         </section>
       </main>
     </>

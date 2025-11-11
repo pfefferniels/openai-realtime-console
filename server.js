@@ -24,6 +24,9 @@ const sessionConfig = JSON.stringify({
         voice: "marin",
       },
     },
+    prompt: {
+      id: "pmpt_6910ca48a91c81938deb359e218e53960752fce1c06384ba",
+    },
   },
 });
 
@@ -50,7 +53,7 @@ app.post("/session", async (req, res) => {
 });
 
 // API route for ephemeral token generation
-app.get("/token", async (req, res) => {
+app.get("/token", async (_, res) => {
   try {
     const response = await fetch(
       "https://api.openai.com/v1/realtime/client_secrets",
