@@ -6,8 +6,7 @@ import "./base.css";
 const rootElement = document.getElementById("root");
 if (!rootElement) throw new Error("Root element not found");
 
-ReactDOM.hydrateRoot(
-  rootElement,
+ReactDOM.createRoot(rootElement).render(
   <StrictMode>
     <App />
   </StrictMode>,
