@@ -10,16 +10,13 @@ interface EventLogProps {
 export default function EventLog({ events }: EventLogProps) {
   return (
     <div className="flex flex-col gap-2 overflow-x-auto">
-      {events.length === 0 ? (
-        <div className="text-gray-500">Awaiting events...</div>
-      ) : (
-        events.map((e, i) => {
-          return (
-            <div key={`event_${i}`}>
-              {e.type}: {e.value}
-            </div>
-          )
-        }))}
+      {events.map((e, i) => {
+        return (
+          <div key={`event_${i}`}>
+            {JSON.stringify(e)}
+          </div>
+        )
+      })}
     </div>
   );
 }

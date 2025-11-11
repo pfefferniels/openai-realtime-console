@@ -2,7 +2,36 @@ import { useEffect, useRef, useState } from "react";
 import EventLog from "./EventLog";
 import SessionControls from "./SessionControls";
 import alleluja from "./alleluia.png";
-import { MarkerArea } from "@markerjs/markerjs3";
+import { MarkerArea, MarkerBaseEditor, MarkerBaseState, CaptionFrameMarker, ShapeMarkerEditor } from "@markerjs/markerjs3";
+
+class AnnotationMarker extends CaptionFrameMarker {
+  public static typeName = 'AnnotatedHighlightMarker';
+  public static title = 'Annotated highlight marker';
+  protected static DEFAULT_TEXT = '';
+
+  constructor(container: SVGGElement) {
+    super(container);
+
+    this.fontSize = {
+      value: 8,
+      units: 'pt',
+      step: 0.5
+    }
+
+    this.strokeColor = 'black';
+    this.strokeWidth = 1;
+  }
+
+  public setAnnotation(item: EventItem) {
+    this.text = `${item.value}`;
+    if (item.type === 'neume-type') {
+      this.fillColor = 'blue'
+    }
+    else {
+      this.fillColor = 'orange'
+    }
+  }
+}
 
 interface EventItem {
   type: string;
@@ -11,20 +40,53 @@ interface EventItem {
 
 export default function App() {
   const [isSessionActive, setIsSessionActive] = useState(false);
-  const [events, setEvents] = useState<EventItem[]>([]);
+  const [events, setEvents] = useState<(EventItem & MarkerBaseState)[]>([]);
   const [dataChannel, setDataChannel] = useState<RTCDataChannel | null>(null);
   const peerConnection = useRef<RTCPeerConnection | null>(null);
   const audioElement = useRef<HTMLAudioElement | null>(null);
-  const imgElement = useRef<HTMLImageElement | null>(null);
+
   const containerElement = useRef<HTMLDivElement | null>(null);
+  const markerArea = useRef<MarkerArea | null>(null);
+
+  const activeMarker = useRef<MarkerBaseEditor<AnnotationMarker> | null>(null)
 
   useEffect(() => {
-    if (!imgElement.current || !containerElement.current) return;
+    if (markerArea.current || !containerElement.current) return;
 
-    const markerArea = new MarkerArea();
-    markerArea.targetImage = imgElement.current;
-    containerElement.current.appendChild(markerArea);
-  });
+    const targetImg = document.createElement('img');
+    targetImg.src = alleluja;
+
+    markerArea.current = new MarkerArea();
+    markerArea.current.registerMarkerType(AnnotationMarker, ShapeMarkerEditor);
+    markerArea.current.targetImage = targetImg;
+    containerElement.current.appendChild(markerArea.current);
+
+    createMarker();
+  }, [containerElement, alleluja, markerArea]);
+
+  function createMarker() {
+    if (!markerArea.current) return
+
+    activeMarker.current = markerArea.current.createMarker(AnnotationMarker) as MarkerBaseEditor<AnnotationMarker>;
+  }
+
+  function handleEvent(item: EventItem) {
+    if (!activeMarker.current) return
+    const state = activeMarker.current.marker.getBBox()
+    activeMarker.current.marker.setAnnotation(item);
+
+    if (!state) {
+      console.log('No marker state available');
+      return
+    }
+
+    setEvents(prev => [...prev, {
+      ...item,
+      ...(state as any)
+    }])
+
+    createMarker()
+  }
 
   async function startSession() {
     // Get a session token for OpenAI Realtime API
@@ -161,9 +223,7 @@ export default function App() {
             event.response.output.forEach((output: any) => {
               if (output.type === 'function_call') {
                 const callId = output.call_id;
-                setEvents(
-                  prev => [...prev, JSON.parse(output.arguments)]
-                )
+                handleEvent(JSON.parse(output.arguments));
 
                 sendClientEvent({
                   "type": "conversation.item.create",
@@ -190,28 +250,19 @@ export default function App() {
   return (
     <>
       <main className="absolute top-16 left-0 right-0 bottom-0">
-        <section className="absolute top-0 left-0 right-[380px] bottom-0 flex">
-          <div ref={containerElement}>
-            <img
-              src={alleluja}
-              alt="Alleluja"
-              className="w-full object-contain"
-              ref={imgElement}
-            />
-          </div>
+        <div ref={containerElement} className="overflow-y-scroll" />
 
-          <section className="absolute top-0 left-46 right-0 bottom-32 px-4 overflow-y-auto">
-            <EventLog events={events} />
-          </section>
-          <section className="absolute h-32 left-0 right-0 bottom-0 p-4">
-            <SessionControls
-              startSession={startSession}
-              stopSession={stopSession}
-              sendTextMessage={sendTextMessage}
-              events={events}
-              isSessionActive={isSessionActive}
-            />
-          </section>
+        <section className="absolute top-2 right-2 px-4 overflow-y-auto bg-white">
+          <EventLog events={events} />
+        </section>
+        <section className="absolute h-32 left-0 right-0 bottom-0 p-4 bg-gray-100">
+          <SessionControls
+            startSession={startSession}
+            stopSession={stopSession}
+            sendTextMessage={sendTextMessage}
+            events={events}
+            isSessionActive={isSessionActive}
+          />
         </section>
       </main>
     </>
