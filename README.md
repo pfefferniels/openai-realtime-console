@@ -30,6 +30,28 @@ This application shows how to send and receive Realtime API events over the WebR
 
 For a more comprehensive example, see the [OpenAI Realtime Agents](https://github.com/openai/openai-realtime-agents) demo built with Next.js, using an agentic architecture inspired by [OpenAI Swarm](https://github.com/openai/swarm).
 
+## TypeScript Support
+
+This project is written in TypeScript. The server and client code use TypeScript for type safety and better development experience.
+
+### Type Checking
+
+To run TypeScript type checking:
+
+```bash
+npm run typecheck
+```
+
+### Building for Production
+
+To build the application for production:
+
+```bash
+npm run build
+```
+
+This will compile both the client and server TypeScript code into the `dist` directory.
+
 ## Previous WebSockets version
 
 The previous version of this application that used WebSockets on the client (not recommended in browsers) [can be found here](https://github.com/openai/openai-realtime-console/tree/websockets).
