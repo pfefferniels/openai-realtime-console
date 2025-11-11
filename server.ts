@@ -1,12 +1,12 @@
-import express from "express";
+import express, { Request, Response, NextFunction } from "express";
 import fs from "fs";
 import { createServer as createViteServer } from "vite";
 import "dotenv/config";
 
 const app = express();
 app.use(express.text());
-const port = process.env.PORT || 3000;
-const apiKey = process.env.OPENAI_API_KEY;
+const port: number = parseInt(process.env.PORT || "3000", 10);
+const apiKey: string | undefined = process.env.OPENAI_API_KEY;
 
 // Configure Vite middleware for React client
 const vite = await createViteServer({
@@ -31,7 +31,7 @@ const sessionConfig = JSON.stringify({
 });
 
 // All-in-one SDP request (experimental)
-app.post("/session", async (req, res) => {
+app.post("/session", async (req: Request, res: Response) => {
   const fd = new FormData();
   console.log(req.body);
   fd.set("sdp", req.body);
@@ -53,7 +53,7 @@ app.post("/session", async (req, res) => {
 });
 
 // API route for ephemeral token generation
-app.get("/token", async (_, res) => {
+app.get("/token", async (_: Request, res: Response) => {
   try {
     const response = await fetch(
       "https://api.openai.com/v1/realtime/client_secrets",
@@ -76,7 +76,7 @@ app.get("/token", async (_, res) => {
 });
 
 // Render the React client
-app.use("*", async (req, res, next) => {
+app.use("*", async (req: Request, res: Response, next: NextFunction) => {
   const url = req.originalUrl;
 
   try {
@@ -84,12 +84,12 @@ app.use("*", async (req, res, next) => {
       url,
       fs.readFileSync("./client/index.html", "utf-8"),
     );
-    const { render } = await vite.ssrLoadModule("./client/entry-server.jsx");
+    const { render } = await vite.ssrLoadModule("./client/entry-server.tsx");
     const appHtml = await render(url);
     const html = template.replace(`<!--ssr-outlet-->`, appHtml?.html);
     res.status(200).set({ "Content-Type": "text/html" }).end(html);
   } catch (e) {
-    vite.ssrFixStacktrace(e);
+    vite.ssrFixStacktrace(e as Error);
     next(e);
   }
 });

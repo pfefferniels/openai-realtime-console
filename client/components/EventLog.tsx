@@ -1,4 +1,13 @@
-export default function EventLog({ events }) {
+interface EventItem {
+  type: string;
+  value: string;
+}
+
+interface EventLogProps {
+  events: EventItem[];
+}
+
+export default function EventLog({ events }: EventLogProps) {
   return (
     <div className="flex flex-col gap-2 overflow-x-auto">
       {events.length === 0 ? (
