@@ -1,13 +1,14 @@
 {
   "type": "module",
   "scripts": {
-    "dev": "nodemon server.js --dev",
-    "start": "node server.js",
+    "dev": "tsx watch server.ts --dev",
+    "start": "tsx server.ts",
     "build": "npm run build:client && npm run build:server",
     "build:client": "vite build --outDir dist/client --ssrManifest",
-    "build:server": "vite build --outDir dist/server --ssr /index.js",
-    "devinstall": "zx ../../devinstall.mjs -- node server.js --dev",
-    "lint": "eslint . --ext .js,.jsx --fix"
+    "build:server": "vite build --outDir dist/server --ssr /entry-server.tsx",
+    "devinstall": "zx ../../devinstall.mjs -- tsx server.ts --dev",
+    "lint": "eslint . --ext .ts,.tsx --fix",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@markerjs/markerjs3": "^3.8.1",
@@ -21,12 +22,18 @@
     "react-router-dom": "^6.20.0"
   },
   "devDependencies": {
+    "@types/express": "^5.0.5",
+    "@types/node": "^24.10.0",
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.2",
     "@vitejs/plugin-react": "^4.3.4",
     "nodemon": "^3.1.10",
     "postcss": "^8.4.31",
     "postcss-nesting": "^12.0.2",
     "postcss-preset-env": "^7.7.1",
     "tailwindcss": "^3.4.1",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3",
     "vite": "^5.0.2"
   }
 }

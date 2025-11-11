@@ -4,14 +4,19 @@ import SessionControls from "./SessionControls";
 import alleluja from "./alleluia.png";
 import { MarkerArea } from "@markerjs/markerjs3";
 
+interface EventItem {
+  type: string;
+  value: string;
+}
+
 export default function App() {
   const [isSessionActive, setIsSessionActive] = useState(false);
-  const [events, setEvents] = useState([]);
-  const [dataChannel, setDataChannel] = useState(null);
-  const peerConnection = useRef(null);
-  const audioElement = useRef(null);
-  const imgElement = useRef(null);
-  const containerElement = useRef(null);
+  const [events, setEvents] = useState<EventItem[]>([]);
+  const [dataChannel, setDataChannel] = useState<RTCDataChannel | null>(null);
+  const peerConnection = useRef<RTCPeerConnection | null>(null);
+  const audioElement = useRef<HTMLAudioElement | null>(null);
+  const imgElement = useRef<HTMLImageElement | null>(null);
+  const containerElement = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!imgElement.current || !containerElement.current) return;
@@ -33,7 +38,11 @@ export default function App() {
     // Set up to play remote audio from the model
     audioElement.current = document.createElement("audio");
     audioElement.current.autoplay = true;
-    pc.ontrack = (e) => (audioElement.current.srcObject = e.streams[0]);
+    pc.ontrack = (e) => {
+      if (audioElement.current) {
+        audioElement.current.srcObject = e.streams[0];
+      }
+    };
 
     // Add local audio track for microphone input in the browser
     const ms = await navigator.mediaDevices.getUserMedia({
@@ -61,7 +70,7 @@ export default function App() {
     });
 
     const sdp = await sdpResponse.text();
-    const answer = { type: "answer", sdp };
+    const answer: RTCSessionDescriptionInit = { type: "answer", sdp };
     await pc.setRemoteDescription(answer);
 
     peerConnection.current = pc;
@@ -73,13 +82,13 @@ export default function App() {
       dataChannel.close();
     }
 
-    peerConnection.current.getSenders().forEach((sender) => {
-      if (sender.track) {
-        sender.track.stop();
-      }
-    });
-
     if (peerConnection.current) {
+      peerConnection.current.getSenders().forEach((sender) => {
+        if (sender.track) {
+          sender.track.stop();
+        }
+      });
+
       peerConnection.current.close();
     }
 
@@ -89,7 +98,7 @@ export default function App() {
   }
 
   // Send a message to the model
-  function sendClientEvent(message) {
+  function sendClientEvent(message: any) {
     if (dataChannel) {
       const timestamp = new Date().toLocaleTimeString();
       message.event_id = message.event_id || crypto.randomUUID();
@@ -111,7 +120,7 @@ export default function App() {
   }
 
   // Send a text message to the model
-  function sendTextMessage(message) {
+  function sendTextMessage(message: string) {
     const event = {
       type: "conversation.item.create",
       item: {
@@ -149,7 +158,7 @@ export default function App() {
           console.log('Response done event:', event);
           if (Array.isArray(event.response?.output)) {
             // console.log('Response output array:', event.response.output.map(o => o.type));
-            event.response.output.forEach((output, index) => {
+            event.response.output.forEach((output: any) => {
               if (output.type === 'function_call') {
                 const callId = output.call_id;
                 setEvents(
@@ -198,7 +207,6 @@ export default function App() {
             <SessionControls
               startSession={startSession}
               stopSession={stopSession}
-              sendClientEvent={sendClientEvent}
               sendTextMessage={sendTextMessage}
               events={events}
               isSessionActive={isSessionActive}
