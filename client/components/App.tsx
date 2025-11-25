@@ -2,7 +2,125 @@ import { useEffect, useRef, useState } from "react";
 import EventLog from "./EventLog";
 import SessionControls from "./SessionControls";
 import alleluja from "./alleluia.png";
-import { MarkerArea, MarkerBaseEditor, MarkerBaseState, CaptionFrameMarker, ShapeMarkerEditor } from "@markerjs/markerjs3";
+import { MarkerArea, MarkerBaseEditor, CaptionFrameMarker, ShapeMarkerEditor } from "@markerjs/markerjs3";
+
+// Bounds from DOMRect returned by getBBox()
+interface BoundingBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+// Event with type, value, and optional bounding box information
+// Events may or may not have bounding box data depending on how they were created
+type AnnotationEvent = EventItem & Partial<BoundingBox>;
+
+// Event with confirmed bounding box data (used after validation)
+type AnnotationWithBounds = EventItem & BoundingBox & { index: number };
+
+interface Connection {
+  neumeId: number;
+  syllableId: number;
+  neumeX: number;
+  neumeY: number;
+  syllableX: number;
+  syllableY: number;
+}
+
+/**
+ * Finds connections between neumes and syllables.
+ * Each neume should be connected to the closest syllable that is:
+ * - Below the neume (or on the same level)
+ * - Within a horizontal threshold (50px) of the neume center
+ * - Without crossing (i.e., not jumping into the next line)
+ */
+function findConnections(events: AnnotationEvent[]): Connection[] {
+  const connections: Connection[] = [];
+  
+  // Separate neumes and syllables with their bounding boxes
+  const neumes: AnnotationWithBounds[] = [];
+  const syllables: AnnotationWithBounds[] = [];
+  
+  events.forEach((event, index) => {
+    // Only process events with valid bounding box data
+    if (typeof event.x !== 'number' || typeof event.y !== 'number' ||
+        typeof event.width !== 'number' || typeof event.height !== 'number') {
+      return;
+    }
+    
+    const annotationWithBounds: AnnotationWithBounds = {
+      type: event.type,
+      value: event.value,
+      x: event.x,
+      y: event.y,
+      width: event.width,
+      height: event.height,
+      index
+    };
+    
+    if (event.type === 'neume-type') {
+      neumes.push(annotationWithBounds);
+    } else {
+      syllables.push(annotationWithBounds);
+    }
+  });
+  
+  // For each neume, find the closest syllable below
+  for (const neume of neumes) {
+    const neumeBottomY = neume.y + neume.height;
+    const neumeCenterX = neume.x + neume.width / 2;
+    
+    let bestSyllable: AnnotationWithBounds | null = null;
+    let bestDistance = Infinity;
+    
+    for (const syllable of syllables) {
+      const syllableTop = syllable.y;
+      const syllableCenterX = syllable.x + syllable.width / 2;
+      const syllableLeft = syllable.x;
+      const syllableRight = syllable.x + syllable.width;
+      
+      // Check if syllable is below or at the same level as the neume
+      // and horizontally overlapping or within a reasonable threshold
+      const isBelow = syllableTop >= neume.y;
+      // Use a fixed horizontal threshold to avoid connecting to distant syllables
+      const horizontalThreshold = 50; // pixels
+      const isHorizontallyValid = neumeCenterX >= syllableLeft - horizontalThreshold &&
+                                   neumeCenterX <= syllableRight + horizontalThreshold;
+      
+      if (isBelow && isHorizontallyValid) {
+        // Calculate distance: prioritize vertical closeness, then horizontal
+        const verticalDist = syllableTop - neumeBottomY;
+        const horizontalDist = Math.abs(neumeCenterX - syllableCenterX);
+        
+        // Only consider syllables that are reasonably close vertically
+        // (avoid jumping to next line - threshold based on typical line height)
+        const maxVerticalGap = neume.height * 5; // Reasonable threshold
+        if (verticalDist >= 0 && verticalDist < maxVerticalGap) {
+          const distance = verticalDist * 2 + horizontalDist; // Weight vertical distance more
+          
+          if (distance < bestDistance) {
+            bestDistance = distance;
+            bestSyllable = syllable;
+          }
+        }
+      }
+    }
+    
+    if (bestSyllable) {
+      connections.push({
+        neumeId: neume.index,
+        syllableId: bestSyllable.index,
+        neumeX: neume.x + neume.width / 2,
+        neumeY: neume.y + neume.height,
+        syllableX: bestSyllable.x + bestSyllable.width / 2,
+        syllableY: bestSyllable.y
+      });
+    }
+  }
+  
+  return connections;
+}
 
 class AnnotationMarker extends CaptionFrameMarker {
   public static typeName = 'AnnotatedHighlightMarker';
@@ -40,15 +158,44 @@ interface EventItem {
 
 export default function App() {
   const [isSessionActive, setIsSessionActive] = useState(false);
-  const [events, setEvents] = useState<(EventItem & MarkerBaseState)[]>([]);
+  const [events, setEvents] = useState<AnnotationEvent[]>([]);
+  const [connections, setConnections] = useState<Connection[]>([]);
   const [dataChannel, setDataChannel] = useState<RTCDataChannel | null>(null);
   const peerConnection = useRef<RTCPeerConnection | null>(null);
   const audioElement = useRef<HTMLAudioElement | null>(null);
 
   const containerElement = useRef<HTMLDivElement | null>(null);
   const markerArea = useRef<MarkerArea | null>(null);
+  const connectionsSvg = useRef<SVGSVGElement | null>(null);
 
   const activeMarker = useRef<MarkerBaseEditor<AnnotationMarker> | null>(null)
+
+  // Update connections whenever events change
+  useEffect(() => {
+    const newConnections = findConnections(events);
+    setConnections(newConnections);
+  }, [events]);
+
+  // Update the connection lines SVG
+  useEffect(() => {
+    if (!connectionsSvg.current || !markerArea.current) return;
+
+    // Clear existing lines
+    connectionsSvg.current.replaceChildren();
+
+    // Draw new connection lines
+    for (const conn of connections) {
+      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      line.setAttribute('x1', String(conn.neumeX));
+      line.setAttribute('y1', String(conn.neumeY));
+      line.setAttribute('x2', String(conn.syllableX));
+      line.setAttribute('y2', String(conn.syllableY));
+      line.setAttribute('stroke', '#666');
+      line.setAttribute('stroke-width', '1');
+      line.setAttribute('stroke-dasharray', '4,2');
+      connectionsSvg.current.appendChild(line);
+    }
+  }, [connections]);
 
   useEffect(() => {
     if (markerArea.current || !containerElement.current) return;
@@ -61,6 +208,34 @@ export default function App() {
     markerArea.current.targetImage = targetImg;
     containerElement.current.appendChild(markerArea.current);
 
+    // Create SVG overlay for connection lines
+    const setupConnectionsSvg = () => {
+      if (!containerElement.current || connectionsSvg.current) return;
+      
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.style.position = 'absolute';
+      svg.style.top = '0';
+      svg.style.left = '0';
+      svg.style.width = '100%';
+      svg.style.height = '100%';
+      svg.style.pointerEvents = 'none';
+      svg.style.overflow = 'visible';
+      
+      // Match the viewBox to the image dimensions (MarkerArea's coordinate system)
+      svg.setAttribute('viewBox', `0 0 ${targetImg.naturalWidth} ${targetImg.naturalHeight}`);
+      svg.setAttribute('preserveAspectRatio', 'xMinYMin meet');
+      
+      containerElement.current.appendChild(svg);
+      connectionsSvg.current = svg;
+    };
+
+    // Check if image is already loaded (e.g., from cache)
+    if (targetImg.complete && targetImg.naturalWidth > 0) {
+      setupConnectionsSvg();
+    } else {
+      targetImg.onload = setupConnectionsSvg;
+    }
+
     createMarker();
   }, [containerElement, alleluja, markerArea]);
 
@@ -72,17 +247,20 @@ export default function App() {
 
   function handleEvent(item: EventItem) {
     if (!activeMarker.current) return
-    const state = activeMarker.current.marker.getBBox()
+    const bbox = activeMarker.current.marker.getBBox()
     activeMarker.current.marker.setAnnotation(item);
 
-    if (!state) {
-      console.log('No marker state available');
+    if (!bbox) {
+      console.log('No marker bounding box available');
       return
     }
 
     setEvents(prev => [...prev, {
       ...item,
-      ...(state as any)
+      x: bbox.x,
+      y: bbox.y,
+      width: bbox.width,
+      height: bbox.height
     }])
 
     createMarker()
@@ -250,7 +428,7 @@ export default function App() {
   return (
     <>
       <main className="absolute top-16 left-0 right-0 bottom-0">
-        <div ref={containerElement} className="overflow-y-scroll" />
+        <div ref={containerElement} className="overflow-y-scroll relative" />
 
         <section className="absolute top-2 right-2 px-4 overflow-y-auto bg-white">
           <EventLog events={events} />
