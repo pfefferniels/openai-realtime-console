@@ -12,8 +12,12 @@ interface BoundingBox {
   height: number;
 }
 
-// Event with type, value, and bounding box information
-interface AnnotationEvent extends EventItem, Partial<BoundingBox> {}
+// Event with type, value, and optional bounding box information
+// Events may or may not have bounding box data depending on how they were created
+type AnnotationEvent = EventItem & Partial<BoundingBox>;
+
+// Event with confirmed bounding box data (used after validation)
+type AnnotationWithBounds = EventItem & BoundingBox & { index: number };
 
 interface Connection {
   neumeId: number;
@@ -27,16 +31,16 @@ interface Connection {
 /**
  * Finds connections between neumes and syllables.
  * Each neume should be connected to the closest syllable that is:
- * - Below the neume (or on the same line)
- * - To the left or horizontally overlapping with the neume
+ * - Below the neume (or on the same level)
+ * - Within a horizontal threshold (50px) of the neume center
  * - Without crossing (i.e., not jumping into the next line)
  */
 function findConnections(events: AnnotationEvent[]): Connection[] {
   const connections: Connection[] = [];
   
   // Separate neumes and syllables with their bounding boxes
-  const neumes: (BoundingBox & EventItem & { index: number })[] = [];
-  const syllables: (BoundingBox & EventItem & { index: number })[] = [];
+  const neumes: AnnotationWithBounds[] = [];
+  const syllables: AnnotationWithBounds[] = [];
   
   events.forEach((event, index) => {
     // Only process events with valid bounding box data
@@ -45,7 +49,7 @@ function findConnections(events: AnnotationEvent[]): Connection[] {
       return;
     }
     
-    const annotationWithBounds = {
+    const annotationWithBounds: AnnotationWithBounds = {
       type: event.type,
       value: event.value,
       x: event.x,
@@ -67,7 +71,7 @@ function findConnections(events: AnnotationEvent[]): Connection[] {
     const neumeBottomY = neume.y + neume.height;
     const neumeCenterX = neume.x + neume.width / 2;
     
-    let bestSyllable: (BoundingBox & EventItem & { index: number }) | null = null;
+    let bestSyllable: AnnotationWithBounds | null = null;
     let bestDistance = Infinity;
     
     for (const syllable of syllables) {
@@ -205,8 +209,7 @@ export default function App() {
     containerElement.current.appendChild(markerArea.current);
 
     // Create SVG overlay for connection lines
-    // Wait for image to load to get its dimensions
-    targetImg.onload = () => {
+    const setupConnectionsSvg = () => {
       if (!containerElement.current || connectionsSvg.current) return;
       
       const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -225,6 +228,13 @@ export default function App() {
       containerElement.current.appendChild(svg);
       connectionsSvg.current = svg;
     };
+
+    // Check if image is already loaded (e.g., from cache)
+    if (targetImg.complete && targetImg.naturalWidth > 0) {
+      setupConnectionsSvg();
+    } else {
+      targetImg.onload = setupConnectionsSvg;
+    }
 
     createMarker();
   }, [containerElement, alleluja, markerArea]);
