@@ -2,14 +2,18 @@ import { useEffect, useRef, useState } from "react";
 import EventLog from "./EventLog";
 import SessionControls from "./SessionControls";
 import alleluja from "./alleluia.png";
-import { MarkerArea, MarkerBaseEditor, MarkerBaseState, CaptionFrameMarker, ShapeMarkerEditor } from "@markerjs/markerjs3";
+import { MarkerArea, MarkerBaseEditor, CaptionFrameMarker, ShapeMarkerEditor } from "@markerjs/markerjs3";
 
-interface AnnotationWithBounds extends EventItem {
+// Bounds from DOMRect returned by getBBox()
+interface BoundingBox {
   x: number;
   y: number;
   width: number;
   height: number;
 }
+
+// Event with type, value, and bounding box information
+interface AnnotationEvent extends EventItem, Partial<BoundingBox> {}
 
 interface Connection {
   neumeId: number;
@@ -27,21 +31,34 @@ interface Connection {
  * - To the left or horizontally overlapping with the neume
  * - Without crossing (i.e., not jumping into the next line)
  */
-function findConnections(events: (EventItem & MarkerBaseState)[]): Connection[] {
+function findConnections(events: AnnotationEvent[]): Connection[] {
   const connections: Connection[] = [];
   
   // Separate neumes and syllables with their bounding boxes
-  const neumes: (AnnotationWithBounds & { index: number })[] = [];
-  const syllables: (AnnotationWithBounds & { index: number })[] = [];
+  const neumes: (BoundingBox & EventItem & { index: number })[] = [];
+  const syllables: (BoundingBox & EventItem & { index: number })[] = [];
   
   events.forEach((event, index) => {
-    const bounds = event as unknown as AnnotationWithBounds;
-    if (typeof bounds.x !== 'number' || typeof bounds.y !== 'number') return;
+    // Only process events with valid bounding box data
+    if (typeof event.x !== 'number' || typeof event.y !== 'number' ||
+        typeof event.width !== 'number' || typeof event.height !== 'number') {
+      return;
+    }
+    
+    const annotationWithBounds = {
+      type: event.type,
+      value: event.value,
+      x: event.x,
+      y: event.y,
+      width: event.width,
+      height: event.height,
+      index
+    };
     
     if (event.type === 'neume-type') {
-      neumes.push({ ...bounds, index });
+      neumes.push(annotationWithBounds);
     } else {
-      syllables.push({ ...bounds, index });
+      syllables.push(annotationWithBounds);
     }
   });
   
@@ -50,7 +67,7 @@ function findConnections(events: (EventItem & MarkerBaseState)[]): Connection[] 
     const neumeBottomY = neume.y + neume.height;
     const neumeCenterX = neume.x + neume.width / 2;
     
-    let bestSyllable: (AnnotationWithBounds & { index: number }) | null = null;
+    let bestSyllable: (BoundingBox & EventItem & { index: number }) | null = null;
     let bestDistance = Infinity;
     
     for (const syllable of syllables) {
@@ -60,10 +77,12 @@ function findConnections(events: (EventItem & MarkerBaseState)[]): Connection[] 
       const syllableRight = syllable.x + syllable.width;
       
       // Check if syllable is below or at the same level as the neume
-      // and horizontally overlapping or to the left
+      // and horizontally overlapping or within a reasonable threshold
       const isBelow = syllableTop >= neume.y;
-      const isHorizontallyValid = neumeCenterX >= syllableLeft - syllable.width &&
-                                   neumeCenterX <= syllableRight + syllable.width;
+      // Use a fixed horizontal threshold to avoid connecting to distant syllables
+      const horizontalThreshold = 50; // pixels
+      const isHorizontallyValid = neumeCenterX >= syllableLeft - horizontalThreshold &&
+                                   neumeCenterX <= syllableRight + horizontalThreshold;
       
       if (isBelow && isHorizontallyValid) {
         // Calculate distance: prioritize vertical closeness, then horizontal
@@ -135,7 +154,7 @@ interface EventItem {
 
 export default function App() {
   const [isSessionActive, setIsSessionActive] = useState(false);
-  const [events, setEvents] = useState<(EventItem & MarkerBaseState)[]>([]);
+  const [events, setEvents] = useState<AnnotationEvent[]>([]);
   const [connections, setConnections] = useState<Connection[]>([]);
   const [dataChannel, setDataChannel] = useState<RTCDataChannel | null>(null);
   const peerConnection = useRef<RTCPeerConnection | null>(null);
@@ -158,9 +177,7 @@ export default function App() {
     if (!connectionsSvg.current || !markerArea.current) return;
 
     // Clear existing lines
-    while (connectionsSvg.current.firstChild) {
-      connectionsSvg.current.removeChild(connectionsSvg.current.firstChild);
-    }
+    connectionsSvg.current.replaceChildren();
 
     // Draw new connection lines
     for (const conn of connections) {
@@ -171,7 +188,7 @@ export default function App() {
       line.setAttribute('y2', String(conn.syllableY));
       line.setAttribute('stroke', '#666');
       line.setAttribute('stroke-width', '1');
-      line.setAttribute('stroke-dasharray', '3,2');
+      line.setAttribute('stroke-dasharray', '4,2');
       connectionsSvg.current.appendChild(line);
     }
   }, [connections]);
@@ -220,17 +237,20 @@ export default function App() {
 
   function handleEvent(item: EventItem) {
     if (!activeMarker.current) return
-    const state = activeMarker.current.marker.getBBox()
+    const bbox = activeMarker.current.marker.getBBox()
     activeMarker.current.marker.setAnnotation(item);
 
-    if (!state) {
-      console.log('No marker state available');
+    if (!bbox) {
+      console.log('No marker bounding box available');
       return
     }
 
     setEvents(prev => [...prev, {
       ...item,
-      ...(state as any)
+      x: bbox.x,
+      y: bbox.y,
+      width: bbox.width,
+      height: bbox.height
     }])
 
     createMarker()
